@@ -191,11 +191,9 @@ The following constants can be modified in the implementation section:
 
 libjson is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
 
-Copyright 2025 rizki rakasiwi <rizkirr.xyz@gmail.com>
-
 ## Support
 
-For bug reports, feature requests, or questions, please open an issue on the project repository or contact the maintainer at rizkirr.xyz@gmail.com.
+For bug reports, feature requests, or questions, please open an issue on the project repository.
 
 ## Contributing
 
