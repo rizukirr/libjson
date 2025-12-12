@@ -1,0 +1,20 @@
+{
+  "id": "resp_062573:adbb5b1c75006935183e13ec8190a525a8768be2222b",
+  "model": "gpt-4o-mini-2024-07-18",
+  "output": [
+    {
+      "id": "msg_062573adbb5b1c75006935183f2160819091dda2f7a86a9105",
+      "content": {
+        "type": "output_text",
+        "text": "Halo! How can I assist you today?"
+      }
+    },
+    {
+      "id": "msg_06257306935183fadbb5b1c7502160819091dda2f7a86a9105",
+      "content": {
+        "type": "output_text",
+        "text": "Halo! How can I assist you today?"
+      }
+    }
+  ]
+}
