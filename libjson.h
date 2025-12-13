@@ -1,3 +1,25 @@
+/*
+ * Copyright (c) 2025 Rizki Rakasiwi <rizkirr.xyz@gmail.com>
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef LIBJSON_H
 #define LIBJSON_H
 
@@ -12,14 +34,41 @@ extern "C" {
 
 typedef struct JsonContext JsonContext;
 
+/**
+ * Initialize a new JSON parsing context.
+ * Returns a new JsonContext or NULL on failure.
+ */
 JsonContext *json_begin();
 
+/**
+ * Free the JSON context and all associated memory.
+ * @param ctx The context to free
+ */
 void json_end(JsonContext *ctx);
 
+/**
+ * Get the count of elements in the most recently parsed array.
+ * @param ctx The JSON context
+ * @return Number of array elements, or 0 on error
+ */
 size_t json_array_count(JsonContext *ctx);
 
+/**
+ * Parse a JSON array and return pointers to its elements.
+ * @param ctx The JSON context
+ * @param key The key to search for (unused in current implementation)
+ * @param raw_json The raw JSON array string
+ * @return Array of pointers to JSON objects, or NULL on error
+ */
 void **get_array(JsonContext *ctx, const char *key, char *raw_json);
 
+/**
+ * Extract a value for the given key from a JSON object.
+ * @param ctx The JSON context
+ * @param key The key to search for
+ * @param raw_json The raw JSON object string
+ * @return Pointer to the extracted value, or NULL if not found
+ */
 void *get_value(JsonContext *ctx, const char *key, char *raw_json);
 
 #ifdef LIBJSON_IMPLEMENTATION
