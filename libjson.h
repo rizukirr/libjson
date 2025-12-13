@@ -8,8 +8,8 @@
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -38,7 +38,7 @@ typedef struct JsonContext JsonContext;
  * Initialize a new JSON parsing context.
  * Returns a new JsonContext or NULL on failure.
  */
-JsonContext *json_begin();
+JsonContext *json_begin(void);
 
 /**
  * Free the JSON context and all associated memory.
@@ -150,11 +150,11 @@ typedef struct {
   size_t block_size;
 } JsonArena;
 
-static size_t align_up(uintptr_t ptr, size_t alignment) {
+static size_t json_alloc_align(uintptr_t ptr, size_t alignment) {
   return (alignment - (ptr % alignment)) % alignment;
 }
 
-static JsonArena *json_alloc_init() {
+static JsonArena *json_alloc_init(void) {
   JsonArena *arena = (JsonArena *)calloc(1, sizeof(JsonArena));
   if (arena == NULL) {
     fprintf(stderr, "Memory allocation fail, Buy more RAM LOL!\n");
@@ -192,7 +192,7 @@ static void *json_alloc(JsonArena *arena, size_t size, size_t alignment) {
 
   uintptr_t current_ptr =
       (uintptr_t)(arena->current->data + arena->current->index);
-  size_t padding = align_up(current_ptr, alignment);
+  size_t padding = json_alloc_align(current_ptr, alignment);
 
   if (arena->current->index + padding + size > arena->current->cap) {
     size_t next_cap = (size > arena->block_size) ? size : arena->block_size;
@@ -210,7 +210,7 @@ static void *json_alloc(JsonArena *arena, size_t size, size_t alignment) {
     arena->current = next;
 
     current_ptr = (uintptr_t)next->data;
-    padding = align_up(current_ptr, alignment);
+    padding = json_alloc_align(current_ptr, alignment);
   }
 
   arena->current->index += padding;
@@ -461,7 +461,7 @@ static char *json_extract_value(JsonArena *arena, const char *value_start) {
   }
 }
 
-JsonContext *json_begin() {
+JsonContext *json_begin(void) {
   JsonArena *arena = json_alloc_init();
   if (!arena) {
     fprintf(stderr, "Cannot allocate memory arena for json_begin\n");
