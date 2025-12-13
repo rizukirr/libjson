@@ -111,7 +111,7 @@ gcc -std=c99 -o example example.c
 
 ## License
 
-This project is under apache license 2.0. See `LICENSE` for details.
+This project is under MIT license. See [LICENSE](LICENSE) for details.
 
 ## Support
 
