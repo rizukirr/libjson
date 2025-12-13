@@ -57,8 +57,9 @@ int main(void) {
   // get raw json array
   char *output_raw = get_value(ctx, "output", json_string);
   // get array of raw json objects
-  char **output_arr = (char **)get_array(ctx, "output", output_raw);
-  size_t output_count = json_array_count(ctx);
+  size_t output_count;
+  char **output_arr =
+      (char **)get_array(ctx, "output", output_raw, &output_count);
   for (size_t i = 0; i < output_count; i++) {
     // get raw json object
     char *output_obj = output_arr[i];

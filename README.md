@@ -80,12 +80,10 @@ Extracts a value for the given key from a JSON object. Returns a null-terminated
 #### Extract Arrays
 
 ```c
-void **get_array(JsonContext *ctx, const char *key, char *raw_json);
-size_t json_array_count(JsonContext *ctx);
+void **get_array(JsonContext *ctx, const char *key, char *raw_json, size_t *count);
 ```
 
-- `get_array()`: Parses a JSON array and returns an array of JSON objects/values
-- `json_array_count()`: Returns the number of elements extracted from the last array operation
+- `get_array()`: Parses a JSON array and returns an array of JSON objects/values and given array count
 
 ### Example
 

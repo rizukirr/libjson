@@ -47,20 +47,14 @@ JsonContext *json_begin(void);
 void json_end(JsonContext *ctx);
 
 /**
- * Get the count of elements in the most recently parsed array.
- * @param ctx The JSON context
- * @return Number of array elements, or 0 on error
- */
-size_t json_array_count(JsonContext *ctx);
-
-/**
  * Parse a JSON array and return pointers to its elements.
  * @param ctx The JSON context
  * @param key The key to search for (unused in current implementation)
  * @param raw_json The raw JSON array string
  * @return Array of pointers to JSON objects, or NULL on error
  */
-void **get_array(JsonContext *ctx, const char *key, char *raw_json);
+void **get_array(JsonContext *ctx, const char *key, char *raw_json,
+                 size_t *count);
 
 /**
  * Extract a value for the given key from a JSON object.
@@ -517,16 +511,8 @@ char *get_obj(JsonArena *arena, char *json, const char *key) {
   return result;
 }
 
-size_t json_array_count(JsonContext *ctx) {
-  if (!ctx || !ctx->arena || !ctx->stack) {
-    fprintf(stderr, "Invalid arguments to json_array_count\n");
-    return 0;
-  }
-
-  return ctx->stack->count;
-}
-
-void **get_array(JsonContext *ctx, const char *key, char *raw_json) {
+void **get_array(JsonContext *ctx, const char *key, char *raw_json,
+                 size_t *count) {
   if (!ctx || !ctx->arena || !key) {
     fprintf(stderr, "Invalid arguments to get_array\n");
     return NULL;
@@ -582,6 +568,7 @@ void **get_array(JsonContext *ctx, const char *key, char *raw_json) {
       return NULL;
     }
   }
+  *count = ctx->stack->count;
   return (void **)ctx->stack->items;
 }
 
