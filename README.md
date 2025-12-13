@@ -1,200 +1,138 @@
 # libjson
 
-A lightweight, header-only C JSON parser library. libjson provides a simple and efficient API for parsing and querying JSON data without external dependencies.
+A lightweight, single-header JSON parser for C with arena-based memory management.
 
-## Installation
+## Introduction
 
-libjson is a header-only library. Simply copy `libjson.h` to your project and include it in one source file with the implementation macro defined:
+`libjson` is a minimalist JSON parsing library designed for C projects that need simple, efficient JSON parsing without heavy dependencies. It uses arena allocation for fast memory management and provides a straightforward API for extracting values from JSON documents.
+
+**Key Features:**
+- Single-header library - just include and use
+- Arena-based memory allocation for performance
+- No external dependencies (only standard C library)
+- Simple, intuitive API
+- Support for nested objects and arrays
+- C89/C99 compatible
+
+## How It Works
+
+### Memory Management
+
+The library uses an arena allocator (also known as a region-based allocator) to manage memory efficiently:
+
+1. **Arena Structure**: Memory is allocated in fixed-size blocks (regions) of 4KB by default
+2. **Alignment**: Proper memory alignment is ensured for all allocations using `alignof` (C11) or offset-based calculation for older standards
+3. **No Individual Frees**: All memory is freed at once when `json_end()` is called, eliminating memory leaks and fragmentation
+4. **Dynamic Growth**: When a region fills up, a new region is automatically allocated and linked
+
+### Parsing Strategy
+
+The parser uses a non-destructive, lazy parsing approach:
+
+1. **Key Lookup**: `json_find_key()` traverses the JSON string to locate keys at the appropriate depth level
+2. **Bracket Matching**: `find_matching_bracket()` uses a depth counter to find matching `{}` or `[]` brackets, accounting for nested structures and strings
+3. **Value Extraction**: `json_extract_value()` extracts the value after a key, handling strings (with escape sequences), objects, arrays, numbers, booleans, and null
+4. **Array Parsing**: Arrays are parsed into individual JSON objects/values stored in a dynamic array
+
+**Technical Details:**
+- Maximum nesting depth: 100 levels (configurable via `JSON_DEPTH_LIMIT`)
+- String escape sequences are properly handled
+- Whitespace is automatically skipped
+- The original JSON string must remain valid during parsing
+
+## How to Use
+
+### Basic Setup
+
+1. **Include the header in ONE C file with the implementation:**
 
 ```c
 #define LIBJSON_IMPLEMENTATION
 #include "libjson.h"
 ```
 
-In other files, include the header normally:
+2. **In other files, just include the header:**
 
 ```c
 #include "libjson.h"
 ```
 
-## Example Usage
+### API Reference
+
+#### Initialize and Cleanup
 
 ```c
-#define LIBJSON_IMPLEMENTATION
-#include "libjson.h"
-#include <stdio.h>
-
-int main() {
-    char err[256] = {0};
-    char *json_str = "{"
-        "\"name\":\"John\","
-        "\"age\":30,"
-        "\"address\":{\"city\":\"New York\",\"zip\":10001},"
-        "\"items\":[{\"id\":1},{\"id\":2}]"
-    "}";
-
-    // Initialize JSON parser
-    JsonCtx *ctx = json_begin(json_str, err);
-    if (!ctx) {
-        fprintf(stderr, "Error: %s\n", err);
-        return 1;
-    }
-
-    // Parse object properties
-    char *name = json_get_string(ctx, "name", err);
-    int *age = json_get_int(ctx, "age", err);
-
-    printf("Name: %s\n", name);
-    printf("Age: %d\n", *age);
-
-    // Navigate to nested object using json_obj_key
-    JsonCtx *address = json_obj_key(ctx, "address", err);
-    if (address) {
-        char *city = json_get_string(address, "city", err);
-        int *zip = json_get_int(address, "zip", err);
-        printf("City: %s\n", city);
-        printf("ZIP: %d\n", *zip);
-    }
-
-    // Parse array
-    char **items = json_array_key(ctx, "items", err);
-    int count = json_array_count(ctx, err);
-
-    printf("Items:\n");
-    for (int i = 0; i < count; i++) {
-        JsonCtx *item = json_obj(ctx, items[i], err);
-        int *id = json_get_int(item, "id", err);
-        printf("  - ID: %d\n", *id);
-    }
-
-    // Clean up
-    json_end(ctx, err);
-    return 0;
-}
+JsonContext *json_begin();
+void json_end(JsonContext *ctx);
 ```
 
-## API Reference
+- `json_begin()`: Creates a new JSON parsing context with arena allocator
+- `json_end()`: Frees all memory associated with the context
 
-### Core Functions
+#### Extract Values
 
-#### `JsonCtx *json_begin(char *json, char *err)`
-Create a new JSON object from a JSON string.
+```c
+void *get_value(JsonContext *ctx, const char *key, char *raw_json);
+```
 
-**Parameters:**
-- `json` - JSON string to parse
-- `err` - Error buffer (minimum 256 bytes recommended)
+Extracts a value for the given key from a JSON object. Returns a null-terminated string containing the value.
 
-**Returns:** Pointer to JSON object, or NULL on error
+#### Extract Arrays
 
----
+```c
+void **get_array(JsonContext *ctx, const char *key, char *raw_json);
+size_t json_array_count(JsonContext *ctx);
+```
 
-#### `void json_end(JsonCtx *ctx, char *err)`
-Free a JSON object and all associated memory.
+- `get_array()`: Parses a JSON array and returns an array of JSON objects/values
+- `json_array_count()`: Returns the number of elements extracted from the last array operation
 
-**Parameters:**
-- `ctx` - Pointer to JSON object
-- `err` - Error buffer
+### Example
 
----
+See `example.c` for a complete usage example demonstrating:
+- Loading JSON from a file
+- Extracting simple key-value pairs
+- Working with nested objects
+- Iterating over arrays
 
-#### `void *json_get(JsonCtx *ctx, char *key, char *err)`
-Get a value from a JSON object by key. Returns a generic pointer that should be cast to the appropriate type.
+### Compilation
 
-**Parameters:**
-- `ctx` - Pointer to JSON object
-- `key` - Key to search for
-- `err` - Error buffer
+Compile with any C compiler:
 
-**Returns:** Pointer to value, or NULL if not found
+```bash
+gcc -o example example.c
+clang -o example example.c
+```
 
----
-
-#### `JsonCtx *json_obj(JsonCtx *ctx, char *json_obj, char *err)`
-Update the JSON object's source to point to a new JSON string.
-
-**Parameters:**
-- `ctx` - Pointer to existing JSON object
-- `json_obj` - New JSON string to parse
-- `err` - Error buffer
-
-**Returns:** The same JSON object with updated source, or NULL on error
-
----
-
-#### `JsonCtx *json_obj_key(JsonCtx *ctx, char *key, char *err)`
-Navigate to a nested JSON object by key.
-
-**Parameters:**
-- `ctx` - Pointer to JSON object
-- `key` - Key of nested object
-- `err` - Error buffer
-
-**Returns:** JSON object pointing to nested object, or NULL if not found
-
----
-
-#### `char **json_array(JsonCtx *ctx, char *source, char *err)`
-Parse a JSON array and return array of string items.
-
-**Parameters:**
-- `ctx` - Pointer to JSON object
-- `source` - JSON array string (must start with '[')
-- `err` - Error buffer
-
-**Returns:** Array of string pointers, or NULL on error
-
----
-
-#### `char **json_array_key(JsonCtx *ctx, char *key, char *err)`
-Parse a JSON array by key and return array of string items.
-
-**Parameters:**
-- `ctx` - Pointer to JSON object
-- `key` - Key of the array to parse
-- `err` - Error buffer
-
-**Returns:** Array of string pointers, or NULL on error
-
----
-
-#### `int json_array_count(JsonCtx *ctx, char *err)`
-Get the count of items in a parsed JSON array.
-
-**Parameters:**
-- `ctx` - Pointer to JSON object containing parsed array
-- `err` - Error buffer
-
-**Returns:** Number of items, or -1 on error
-
----
-
-### Type-Safe Helper Macros
-
-These macros provide convenient type-safe access to JSON values:
-
-- `json_get_int(ctx, key, err)` - Get integer value
-- `json_get_string(ctx, key, err)` - Get string value
-- `json_get_bool(ctx, key, err)` - Get boolean value
-- `json_get_double(ctx, key, err)` - Get double value
-- `json_get_float(ctx, key, err)` - Get float value
-
-## Configuration
-
-The following constants can be modified in the implementation section:
-
-- `JSON_ERROR_BUFFER_SIZE` - Error message buffer size (default: 256)
-- `JSON_DEFAULT_ARENA_SIZE` - Default arena block size (default: 4096)
-- `JSON_MAX_INPUT_SIZE` - Maximum JSON input size (default: 10MB)
-- `JSON_DEPTH_LIMIT` - Maximum nesting depth (default: 100)
+For older C standards (pre-C11):
+```bash
+gcc -std=c99 -o example example.c
+```
 
 ## License
 
-libjson is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
+This project is under apache license 2.0. See `LICENSE` for details.
 
 ## Support
 
-For bug reports, feature requests, or questions, please open an issue on the project repository.
+### Reporting Issues
 
-## Contributing
+If you encounter bugs or have feature requests, please:
+1. Check existing issues first
+2. Provide a minimal example demonstrating the problem
+3. Include your compiler version and platform information
 
-Contributions are welcome. Please ensure code follows the existing style and includes appropriate tests and documentation.
+### Contributing
+
+Contributions are welcome! Please ensure:
+- Code follows the existing style
+- Changes don't break existing functionality
+- Memory safety is maintained
+
+### Questions
+
+For questions about usage or implementation details, feel free to open a discussion or issue in the repository.
+
+---
+
+**Note**: This library prioritizes simplicity and minimal dependencies. For production use with complex JSON schemas or strict validation requirements, consider more feature-complete libraries like cJSON or json-c.
