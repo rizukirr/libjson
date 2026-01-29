@@ -72,7 +72,7 @@ void json_end(JsonContext *ctx);
 #### Extract Values
 
 ```c
-void *get_value(JsonContext *ctx, const char *key, char *raw_json);
+char *get_value(JsonContext *ctx, const char *key, char *raw_json);
 ```
 
 Extracts a value for the given key from a JSON object. Returns a null-terminated string containing the value.
@@ -80,12 +80,106 @@ Extracts a value for the given key from a JSON object. Returns a null-terminated
 #### Extract Arrays
 
 ```c
-void **get_array(JsonContext *ctx, const char *key, char *raw_json, size_t *count);
+char **get_array(JsonContext *ctx, const char *key, char *raw_json, size_t *count);
 ```
 
 - `get_array()`: Parses a JSON array and returns an array of JSON objects/values and given array count
 
 ### Example
+
+The abstraction API is looks like this:
+
+```c
+json_begin();
+    get_value(begin);
+    get_array(count); // given array count
+        for (i = 0; i < count; i++)
+            get_value(begin);
+json_end();
+```
+
+#### Simple Example
+
+Here's a quick example parsing a basic JSON object:
+
+```c
+#define LIBJSON_IMPLEMENTATION
+#include "libjson.h"
+#include <stdio.h>
+
+int main(void) {
+    // Sample JSON data
+    char *json = "{\"name\": \"John\", \"age\": \"30\", \"city\": \"New York\"}";
+    
+    // Initialize JSON context
+    JsonContext *ctx = json_begin();
+    if (!ctx) {
+        fprintf(stderr, "Failed to initialize JSON context\n");
+        return 1;
+    }
+    
+    // Extract values
+    char *name = get_value(ctx, "name", json);
+    char *age = get_value(ctx, "age", json);
+    char *city = get_value(ctx, "city", json);
+    
+    // Print extracted values
+    printf("Name: %s\n", name);
+    printf("Age: %s\n", age);
+    printf("City: %s\n", city);
+    
+    // Cleanup
+    json_end(ctx);
+    
+    return 0;
+}
+```
+
+Output:
+```
+Name: John
+Age: 30
+City: New York
+```
+
+#### Working with Arrays
+
+```c
+#define LIBJSON_IMPLEMENTATION
+#include "libjson.h"
+#include <stdio.h>
+
+int main(void) {
+    char *json = "{\"users\": [{\"id\": \"1\", \"name\": \"Alice\"}, "
+                              "{\"id\": \"2\", \"name\": \"Bob\"}]}";
+    
+    JsonContext *ctx = json_begin();
+    if (!ctx) return 1;
+    
+    // Get the array
+    char *users_array = get_value(ctx, "users", json);
+    size_t count;
+    char **users = get_array(ctx, "users", users_array, &count);
+    
+    // Iterate through array elements
+    for (size_t i = 0; i < count; i++) {
+        char *id = get_value(ctx, "id", users[i]);
+        char *name = get_value(ctx, "name", users[i]);
+        printf("User %zu: ID=%s, Name=%s\n", i + 1, id, name);
+    }
+    
+    json_end(ctx);
+    return 0;
+}
+```
+
+Output:
+```
+User 1: ID=1, Name=Alice
+User 2: ID=2, Name=Bob
+```
+
+#### Complete Example
 
 See `example.c` for a complete usage example demonstrating:
 - Loading JSON from a file

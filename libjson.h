@@ -32,6 +32,21 @@
 extern "C" {
 #endif
 
+// Define restrict keyword for portability
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+  // C99 or later - restrict is available
+  #define JSON_RESTRICT restrict
+#elif defined(__GNUC__) || defined(__clang__)
+  // GCC/Clang extension
+  #define JSON_RESTRICT __restrict__
+#elif defined(_MSC_VER)
+  // MSVC extension
+  #define JSON_RESTRICT __restrict
+#else
+  // No restrict support
+  #define JSON_RESTRICT
+#endif
+
 typedef struct JsonContext JsonContext;
 
 /**
@@ -51,19 +66,21 @@ void json_end(JsonContext *ctx);
  * @param ctx The JSON context
  * @param key The key to search for (unused in current implementation)
  * @param raw_json The raw JSON array string
- * @return Array of pointers to JSON objects, or NULL on error
+ * @param count Output parameter for the number of elements in the array
+ * @return Array of JSON object strings, or NULL on error
  */
-void **get_array(JsonContext *ctx, const char *key, char *raw_json,
-                 size_t *count);
+char **get_array(JsonContext *JSON_RESTRICT ctx, const char *JSON_RESTRICT key, 
+                 char *JSON_RESTRICT raw_json, size_t *JSON_RESTRICT count);
 
 /**
  * Extract a value for the given key from a JSON object.
  * @param ctx The JSON context
  * @param key The key to search for
  * @param raw_json The raw JSON object string
- * @return Pointer to the extracted value, or NULL if not found
+ * @return Pointer to the extracted value string, or NULL if not found
  */
-void *get_value(JsonContext *ctx, const char *key, char *raw_json);
+char *get_value(JsonContext *JSON_RESTRICT ctx, const char *JSON_RESTRICT key, 
+                char *JSON_RESTRICT raw_json);
 
 #ifdef LIBJSON_IMPLEMENTATION
 
@@ -128,7 +145,10 @@ void *get_value(JsonContext *ctx, const char *key, char *raw_json);
 #define JSON_KEY_VALUE_SEP ':'
 #define JSON_VALUE_SEP ','
 
-#define ARENA_BLOCK_SIZE 1024 * 4
+#ifndef ARENA_BLOCK_SIZE
+#define ARENA_BLOCK_SIZE (1024 * 4)
+#endif
+
 #define JSON_DEPTH_LIMIT 100
 
 typedef struct {
@@ -149,7 +169,7 @@ static size_t json_alloc_align(uintptr_t ptr, size_t alignment) {
 }
 
 static JsonArena *json_alloc_init(void) {
-  JsonArena *arena = (JsonArena *)calloc(1, sizeof(JsonArena));
+  JsonArena *arena = (JsonArena *)malloc(sizeof(JsonArena));
   if (arena == NULL) {
     fprintf(stderr, "Memory allocation fail, Buy more RAM LOL!\n");
     return NULL;
@@ -167,12 +187,17 @@ static void *json_alloc(JsonArena *arena, size_t size, size_t alignment) {
     return NULL;
   }
 
+  // Check if alignment is a power of two (expected to be true)
+#if defined(__GNUC__) || defined(__clang__)
+  if (__builtin_expect((alignment & (alignment - 1)) != 0, 0))
+#else
   if (alignment & (alignment - 1))
+#endif
     return NULL;
 
   if (!arena->current) {
     size_t block_size = (size > arena->block_size) ? size : arena->block_size;
-    Region *region = calloc(1, sizeof(Region) + block_size);
+    Region *region = malloc(sizeof(Region) + block_size);
     if (region == NULL) {
       fprintf(stderr, "Memory allocation fail, Buy more RAM LOL!\n");
       return NULL;
@@ -190,7 +215,7 @@ static void *json_alloc(JsonArena *arena, size_t size, size_t alignment) {
 
   if (arena->current->index + padding + size > arena->current->cap) {
     size_t next_cap = (size > arena->block_size) ? size : arena->block_size;
-    Region *next = calloc(1, sizeof(Region) + next_cap);
+    Region *next = malloc(sizeof(Region) + next_cap);
     if (!next) {
       fprintf(stderr, "Memory allocation fail, Buy more RAM LOL!\n");
       return NULL;
@@ -244,6 +269,9 @@ static inline const char *skip_whitespace(const char *cursor) {
   return cursor;
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static const char *skip_string(const char *cursor) {
   if (*cursor != JSON_STRING_QUOTE) {
     fprintf(stderr, "Expected quote got %s\n", cursor);
@@ -314,7 +342,8 @@ static const char *find_matching_bracket(const char *start, char open_bracket) {
   return NULL;
 }
 
-static char *json_find_key(const char *key, size_t key_len, char *json) {
+static char *json_find_key(const char *JSON_RESTRICT key, size_t key_len, 
+                           char *JSON_RESTRICT json) {
   if (!key || !json) {
     fprintf(stderr, "Invalid arguments, expected key and raw json\n");
     return NULL;
@@ -362,15 +391,11 @@ static char *json_find_key(const char *key, size_t key_len, char *json) {
 
         if (key_len == target_len && strncmp(key_start, key, key_len) == 0) {
           // skip past the closing quote and find the colon
-          cursor = key_end + 1;
-          while (*cursor && isspace((unsigned char)*cursor))
-            cursor++;
+          cursor = skip_whitespace(key_end + 1);
 
           if (*cursor == ':') {
             // skip past the colon and find the value
-            cursor++;
-            while (*cursor && isspace((unsigned char)*cursor))
-              cursor++;
+            cursor = skip_whitespace(cursor + 1);
             return (char *)cursor;
           }
         }
@@ -398,7 +423,8 @@ static char *json_find_key(const char *key, size_t key_len, char *json) {
   return NULL;
 }
 
-static char *json_extract_value(JsonArena *arena, const char *value_start) {
+static char *json_extract_value(JsonArena *JSON_RESTRICT arena, 
+                                const char *JSON_RESTRICT value_start) {
 
   if (!value_start || !arena) {
     fprintf(stderr, "Expected JsonArena and value_start");
@@ -494,7 +520,9 @@ void json_end(JsonContext *ctx) {
   json_alloc_free(ctx->arena);
 }
 
-char *get_obj(JsonArena *arena, char *json, const char *key) {
+static inline char *get_obj(JsonArena *JSON_RESTRICT arena, 
+                            char *JSON_RESTRICT json, 
+                            const char *JSON_RESTRICT key) {
   if (!json || !arena || !key) {
     fprintf(stderr, "Invalid arguments to get_obj\n");
     return NULL;
@@ -511,8 +539,8 @@ char *get_obj(JsonArena *arena, char *json, const char *key) {
   return result;
 }
 
-void **get_array(JsonContext *ctx, const char *key, char *raw_json,
-                 size_t *count) {
+char **get_array(JsonContext *JSON_RESTRICT ctx, const char *JSON_RESTRICT key, 
+                 char *JSON_RESTRICT raw_json, size_t *JSON_RESTRICT count) {
   if (!ctx || !ctx->arena || !key) {
     fprintf(stderr, "Invalid arguments to get_array\n");
     return NULL;
@@ -521,8 +549,7 @@ void **get_array(JsonContext *ctx, const char *key, char *raw_json,
   char *array_start = raw_json;
 
   // Skip whitespace
-  while (*array_start && isspace(*array_start))
-    array_start++;
+  array_start = (char *)skip_whitespace(array_start);
 
   // Verify it's an array
   if (*array_start != '[') {
@@ -569,10 +596,11 @@ void **get_array(JsonContext *ctx, const char *key, char *raw_json,
     }
   }
   *count = ctx->stack->count;
-  return (void **)ctx->stack->items;
+  return ctx->stack->items;
 }
 
-void *get_value(JsonContext *ctx, const char *key, char *raw_json) {
+char *get_value(JsonContext *JSON_RESTRICT ctx, const char *JSON_RESTRICT key, 
+                char *JSON_RESTRICT raw_json) {
   if (!ctx || !ctx->arena)
     return NULL;
 
