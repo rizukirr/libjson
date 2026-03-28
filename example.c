@@ -1,112 +1,182 @@
-#define LIBJSON_IMPLEMENTATION
 #include "libjson.h"
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
-/**
- * Read entire file into a string buffer
- * Returns allocated string or NULL on failure
- */
+typedef struct {
+  size_t statuses_count;
+  size_t total_text_bytes;
+  JsonSlice metadata_count;
+  JsonSlice first_id;
+  JsonSlice first_screen_name;
+  JsonSlice first_text;
+} PayloadSummary;
+
 static char *read_file(const char *filename) {
-  FILE *fp = fopen(filename, "r");
+  FILE *fp = NULL;
+  char *buffer;
+  long size;
+  size_t read_size;
+
+  #ifdef _MSC_VER
+  if (fopen_s(&fp, filename, "rb") != 0)
+    fp = NULL;
+  #else
+  fp = fopen(filename, "rb");
+  #endif
+
   if (!fp) {
-    fprintf(stderr, "Error: Failed to open '%s'\n", filename);
+    fprintf(stderr, "Error: failed to open '%s'\n", filename);
     return NULL;
   }
 
-  // Get file size
-  fseek(fp, 0, SEEK_END);
-  long size = ftell(fp);
-  rewind(fp);
-
-  // Allocate buffer
-  char *buffer = malloc(size + 1);
-  if (!buffer) {
-    fprintf(stderr, "Error: Failed to allocate memory for file\n");
+  if (fseek(fp, 0, SEEK_END) != 0) {
     fclose(fp);
     return NULL;
   }
 
-  // Read file contents
-  size_t read_size = fread(buffer, 1, size, fp);
+  size = ftell(fp);
+  if (size < 0) {
+    fclose(fp);
+    return NULL;
+  }
+
+  rewind(fp);
+  buffer = (char *)malloc((size_t)size + 1);
+  if (!buffer) {
+    fclose(fp);
+    return NULL;
+  }
+
+  read_size = fread(buffer, 1, (size_t)size, fp);
   buffer[read_size] = '\0';
   fclose(fp);
-
   return buffer;
 }
 
-/**
- * Print a single output item (pretty formatted)
- */
-static void print_output_item(JsonContext *ctx, char *output_item, size_t index,
-                              size_t total) {
-  // Extract output fields
-  char *output_id = get_value(ctx, "id", output_item);
-
-  // Extract nested content object
-  char *content_json = get_value(ctx, "content", output_item);
-  char *content_type = get_value(ctx, "type", content_json);
-  char *content_text = get_value(ctx, "text", content_json);
-
-  // Print formatted output
-  printf("    {\n");
-  printf("      \"id\": \"%s\",\n", output_id);
-  printf("      \"content\": {\n");
-  printf("        \"type\": \"%s\",\n", content_type);
-  printf("        \"text\": \"%s\"\n", content_text);
-  printf("      }\n");
-
-  // Add comma for all but last item
-  if (index < total - 1) {
-    printf("    },\n");
-  } else {
-    printf("    }\n");
-  }
+static void print_slice_line(const char *label, JsonSlice value) {
+  printf("%s: ", label);
+  fwrite(value.data, 1, value.len, stdout);
+  putchar('\n');
 }
 
-int main(void) {
-  // Read JSON file
-  char *json_data = read_file("example.json");
-  if (!json_data) {
-    return 1;
+static int analyze_payload(JsonSlice root, PayloadSummary *summary) {
+  JsonSlice statuses;
+  JsonSlice metadata;
+  JsonArrayIter status_iter;
+  JsonSlice status;
+
+  summary->statuses_count = 0;
+  summary->total_text_bytes = 0;
+  summary->metadata_count = json_from_parts(NULL, 0);
+  summary->first_id = json_from_parts(NULL, 0);
+  summary->first_screen_name = json_from_parts(NULL, 0);
+  summary->first_text = json_from_parts(NULL, 0);
+
+  if (!json_get(root, "statuses", &statuses) ||
+      !json_get(root, "search_metadata", &metadata) ||
+      !json_get(metadata, "count", &summary->metadata_count)) {
+    fprintf(stderr, "Error: failed to read top-level twitter payload fields\n");
+    return 0;
   }
 
-  // Initialize JSON parser context
-  JsonContext *ctx = json_begin();
-  if (!ctx) {
-    fprintf(stderr, "Error: Failed to initialize JSON context\n");
+  json_array_iter_init(statuses, &status_iter);
+  while (json_array_iter_next(&status_iter, &status)) {
+    JsonSlice text;
+
+    if (!json_get(status, "text", &text)) {
+      fprintf(stderr, "Error: failed to read status text\n");
+      return 0;
+    }
+
+    summary->statuses_count++;
+    summary->total_text_bytes += text.len;
+
+    if (summary->statuses_count == 1) {
+      JsonSlice user;
+
+      if (!json_get(status, "id_str", &summary->first_id) ||
+          !json_get(status, "user", &user) ||
+          !json_get(user, "screen_name", &summary->first_screen_name)) {
+        fprintf(stderr, "Error: failed to read first status metadata\n");
+        return 0;
+      }
+
+      summary->first_text = text;
+    }
+  }
+
+  return 1;
+}
+
+static void run_benchmark(JsonSlice root, size_t iterations) {
+  PayloadSummary summary;
+  clock_t start = clock();
+  clock_t end;
+  size_t i;
+  double elapsed_ms;
+  double elapsed_seconds;
+  double total_bytes;
+  double gib_per_second;
+
+  for (i = 0; i < iterations; ++i) {
+    if (!analyze_payload(root, &summary)) {
+      fprintf(stderr, "Benchmark aborted during iteration %lu\n",
+              (unsigned long)i);
+      return;
+    }
+  }
+
+  end = clock();
+  elapsed_ms = ((double)(end - start) * 1000.0) / (double)CLOCKS_PER_SEC;
+  elapsed_seconds = (double)(end - start) / (double)CLOCKS_PER_SEC;
+  total_bytes = (double)root.len * (double)iterations;
+  gib_per_second =
+      elapsed_seconds > 0.0 ? total_bytes / elapsed_seconds / (1024.0 * 1024.0 * 1024.0)
+                            : 0.0;
+
+  printf("\nBenchmark\n");
+  printf("iterations: %lu\n", (unsigned long)iterations);
+  printf("elapsed_ms: %.3f\n", elapsed_ms);
+  printf("avg_ms_per_iteration: %.6f\n", elapsed_ms / (double)iterations);
+  printf("statuses_per_iteration: %lu\n", (unsigned long)summary.statuses_count);
+  printf("throughput_gib_per_s: %.6f\n", gib_per_second);
+}
+
+int main(int argc, char **argv) {
+  char *json_data = read_file("example.json");
+  JsonSlice root;
+  PayloadSummary summary;
+  size_t iterations = 200;
+
+  if (!json_data)
+    return 1;
+
+  if (argc > 1) {
+    char *endptr = NULL;
+    unsigned long parsed = strtoul(argv[1], &endptr, 10);
+    if (endptr && *endptr == '\0' && parsed > 0)
+      iterations = (size_t)parsed;
+  }
+
+  root = json_from_cstr(json_data);
+  if (!analyze_payload(root, &summary)) {
     free(json_data);
     return 1;
   }
 
-  // Extract top-level fields
-  char *response_id = get_value(ctx, "id", json_data);
-  char *model_name = get_value(ctx, "model", json_data);
+  printf("Twitter payload summary\n");
+  print_slice_line("metadata.count", summary.metadata_count);
+  printf("statuses.count: %lu\n", (unsigned long)summary.statuses_count);
+  printf("statuses.total_text_bytes: %lu\n",
+         (unsigned long)summary.total_text_bytes);
+  print_slice_line("first_status.id_str", summary.first_id);
+  print_slice_line("first_status.user.screen_name", summary.first_screen_name);
+  print_slice_line("first_status.text", summary.first_text);
 
-  // Print response header
-  printf("{\n");
-  printf("  \"id\": \"%s\",\n", response_id);
-  printf("  \"model\": \"%s\",\n", model_name);
-  printf("  \"output\": [\n");
+  run_benchmark(root, iterations);
 
-  // Extract and parse output array
-  char *output_array_json = get_value(ctx, "output", json_data);
-  size_t output_count = 0;
-  char **output_items =
-      get_array(ctx, "output", output_array_json, &output_count);
-
-  // Print each output item
-  for (size_t i = 0; i < output_count; i++) {
-    print_output_item(ctx, output_items[i], i, output_count);
-  }
-
-  // Print response footer
-  printf("  ]\n");
-  printf("}\n");
-
-  // Cleanup
-  json_end(ctx);
   free(json_data);
-
   return 0;
 }
