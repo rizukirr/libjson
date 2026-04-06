@@ -1,19 +1,20 @@
 # libjson
 
-`libjson` is a small single-header JSON library for C that provides zero-copy
-reading and zero-allocation writing.
+`libjson` is a single-header C library for JSON serialization and
+deserialization with zero heap allocation — designed to work on embedded
+systems, microcontrollers, and anywhere `malloc` is unavailable or undesirable.
 
-It is aimed at embedded-style workloads where:
-- the input buffer already exists
-- heap allocation should be avoided
-- the caller can consume values as slices instead of owned strings
-- JSON output must be written into a fixed-size buffer
+- **Deserialize** (read) JSON with zero-copy slices into the original buffer
+- **Serialize** (write) JSON into a caller-provided fixed-size buffer
+- No `malloc`, no `free`, no dynamic memory — ever
+- Single header, STB-style — just `#include "libjson.h"`
+- Compiles with `-ffreestanding` and `JSON_NO_STDIO` for bare-metal targets
 
 ## Design
 
 The library does not build a DOM and does not allocate.
 
-**Reader** — returns zero-copy slices into the original JSON buffer:
+**Deserializer** — returns zero-copy slices into the original JSON buffer:
 
 ```c
 typedef struct {
@@ -26,7 +27,7 @@ String values are returned without the surrounding quotes. Object and array
 values are returned as slices that still include their `{...}` or `[...]`
 delimiters. Number, boolean, and `null` values are returned as raw tokens.
 
-**Writer** — serializes JSON into a caller-provided buffer with automatic comma
+**Serializer** — writes JSON into a caller-provided buffer with automatic comma
 insertion and overflow detection:
 
 ```c
@@ -43,7 +44,7 @@ typedef struct {
 Comma tracking uses a bitmask, supporting up to 32 levels of nesting with zero
 extra RAM.
 
-## Reader API
+## Deserializer API
 
 ```c
 JsonSlice json_from_cstr(const char *json);
@@ -61,7 +62,7 @@ bool json_array_iter_next(JsonArrayIter *iter, JsonSlice *out);
 bool json_slice_copy(JsonSlice slice, char *buffer, size_t buffer_size);
 ```
 
-## Writer API
+## Serializer API
 
 ```c
 void          json_writer_init(JsonWriter *w, char *buf, size_t cap);
@@ -87,7 +88,7 @@ void json_write_array_end(JsonWriter *w);
 
 ## Examples
 
-### Reading JSON
+### Deserializing JSON
 
 ```c
 #include "libjson.h"
@@ -119,7 +120,7 @@ int main(void) {
 }
 ```
 
-### Writing JSON
+### Serializing JSON
 
 ```c
 #include "libjson.h"
@@ -161,9 +162,9 @@ If you already know the key length, prefer `json_getn()` to avoid the extra
 
 ## Notes
 
-- **Reader**: input is read-only. Returned slices point into the original JSON
-  buffer — keep the source buffer alive while you use them.
-- **Writer**: writes into a caller-provided buffer. If the buffer overflows,
+- **Deserializer**: input is read-only. Returned slices point into the original
+  JSON buffer — keep the source buffer alive while you use them.
+- **Serializer**: writes into a caller-provided buffer. If the buffer overflows,
   all subsequent writes become silent no-ops. Check once at the end with
   `json_writer_ok()`.
 - For single-pass object traversal, use `json_object_iter_*()` instead of
@@ -175,8 +176,9 @@ If you already know the key length, prefer `json_getn()` to avoid the extra
 - Passing `NULL` to `json_write_str()` emits `null`.
 - Define `JSON_NO_STDIO` before including `libjson.h` to compile out diagnostic
   printing for embedded builds.
-- The library is intentionally small. It is designed for selective access and
-  compact serialization, not full JSON validation or schema-aware parsing.
+- The library is intentionally small. It is designed for zero-allocation JSON
+  serialization and deserialization on embedded systems and resource-constrained
+  targets, not full JSON validation or schema-aware parsing.
 
 ## Build
 
