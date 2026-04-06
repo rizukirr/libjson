@@ -1,3 +1,4 @@
+#define LIBJSON_IMPLEMENTATION
 #include "libjson.h"
 
 #include <stdio.h>

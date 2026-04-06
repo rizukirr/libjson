@@ -20,6 +20,16 @@
  * SOFTWARE.
  */
 
+/*
+ * libjson — zero-copy JSON parser (STB-style single-header library)
+ *
+ * In exactly ONE C file, do:
+ *   #define LIBJSON_IMPLEMENTATION
+ *   #include "libjson.h"
+ *
+ * All other files just #include "libjson.h" for declarations only.
+ */
+
 #ifndef LIBJSON_H
 #define LIBJSON_H
 
@@ -49,31 +59,20 @@ typedef struct {
   const char *cursor;
 } JsonObjectIter;
 
-static inline void json__error(const char *message);
-
 /*
  * Build a slice from an existing pointer and length.
  *
  * The slice does not own the memory. The caller must keep `data` alive for as
  * long as the slice is used.
  */
-static inline JsonSlice json_from_parts(const char *data, size_t len) {
-  JsonSlice slice;
-  slice.data = data;
-  slice.len = len;
-  return slice;
-}
+JsonSlice json_from_parts(const char *data, size_t len);
 
 /*
  * Build a slice from a NUL-terminated JSON string.
  *
  * This is a convenience wrapper around `json_from_parts()`.
  */
-static inline JsonSlice json_from_cstr(const char *json) {
-  if (!json)
-    return json_from_parts(NULL, 0);
-  return json_from_parts(json, strlen(json));
-}
+JsonSlice json_from_cstr(const char *json);
 
 /*
  * Copy a slice into a caller-provided buffer and append a trailing NUL byte.
@@ -82,36 +81,15 @@ static inline JsonSlice json_from_cstr(const char *json) {
  * too small. This helper is optional and exists for callers that need a
  * conventional C string without using heap allocation.
  */
-static inline bool json_slice_copy(JsonSlice slice, char *buffer,
-                                   size_t buffer_size) {
-  if (!buffer) {
-    json__error("json_slice_copy: buffer is NULL");
-    return false;
-  }
-
-  if (!slice.data && slice.len != 0) {
-    json__error("json_slice_copy: invalid slice");
-    return false;
-  }
-
-  if (buffer_size <= slice.len) {
-    json__error("json_slice_copy: buffer too small");
-    return false;
-  }
-
-  if (slice.len > 0)
-    memcpy(buffer, slice.data, slice.len);
-  buffer[slice.len] = '\0';
-  return true;
-}
+bool json_slice_copy(JsonSlice slice, char *buffer, size_t buffer_size);
 
 /*
  * Look up `key` with an explicit key length.
  *
  * This avoids recomputing `strlen(key)` in hot lookup paths.
  */
-static inline bool json_getn(JsonSlice object, const char *key, size_t key_len,
-                             JsonSlice *out);
+bool json_getn(JsonSlice object, const char *key, size_t key_len,
+               JsonSlice *out);
 
 /*
  * Look up `key` in a JSON object slice and return the matched value as a
@@ -122,14 +100,14 @@ static inline bool json_getn(JsonSlice object, const char *key, size_t key_len,
  * tokens. Returns false if the key is missing or the input is not a valid
  * object-shaped slice.
  */
-static inline bool json_get(JsonSlice object, const char *key, JsonSlice *out);
+bool json_get(JsonSlice object, const char *key, JsonSlice *out);
 
 /*
  * Initialize an iterator for a JSON object slice.
  *
  * The iterator walks key/value pairs in-place over the original input buffer.
  */
-static inline void json_object_iter_init(JsonSlice object, JsonObjectIter *iter);
+void json_object_iter_init(JsonSlice object, JsonObjectIter *iter);
 
 /*
  * Return the next object key/value pair as zero-copy slices.
@@ -138,8 +116,8 @@ static inline void json_object_iter_init(JsonSlice object, JsonObjectIter *iter)
  * Returns false when the object is exhausted or when invalid input is
  * encountered.
  */
-static inline bool json_object_iter_next(JsonObjectIter *iter, JsonSlice *key,
-                                         JsonSlice *value);
+bool json_object_iter_next(JsonObjectIter *iter, JsonSlice *key,
+                           JsonSlice *value);
 
 /*
  * Initialize an iterator for a JSON array slice.
@@ -147,7 +125,7 @@ static inline bool json_object_iter_next(JsonObjectIter *iter, JsonSlice *key,
  * The iterator does not allocate and walks the array in-place over the
  * original input buffer.
  */
-static inline void json_array_iter_init(JsonSlice array, JsonArrayIter *iter);
+void json_array_iter_init(JsonSlice array, JsonArrayIter *iter);
 
 /*
  * Return the next array item as a zero-copy slice.
@@ -155,20 +133,33 @@ static inline void json_array_iter_init(JsonSlice array, JsonArrayIter *iter);
  * Returns true while elements remain. Returns false when the array is
  * exhausted or when invalid input is encountered.
  */
-static inline bool json_array_iter_next(JsonArrayIter *iter, JsonSlice *out);
+bool json_array_iter_next(JsonArrayIter *iter, JsonSlice *out);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* LIBJSON_H */
+
+/* ========================================================================= */
+/*                            IMPLEMENTATION                                 */
+/* ========================================================================= */
+
+#ifdef LIBJSON_IMPLEMENTATION
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifdef JSON_NO_STDIO
-static inline void json__error(const char *message) {
-  (void)message;
-}
+static void json__error(const char *message) { (void)message; }
 #else
-static inline void json__error(const char *message) {
+static void json__error(const char *message) {
   fprintf(stderr, "%s\n", message);
 }
 #endif
 
-static inline const char *json__skip_whitespace(const char *cursor,
-                                                const char *end) {
+static const char *json__skip_whitespace(const char *cursor, const char *end) {
   while (cursor < end) {
     unsigned char ch = (unsigned char)*cursor;
     if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r')
@@ -178,8 +169,7 @@ static inline const char *json__skip_whitespace(const char *cursor,
   return cursor;
 }
 
-static inline const char *json__skip_string(const char *cursor,
-                                            const char *end) {
+static const char *json__skip_string(const char *cursor, const char *end) {
   if (cursor >= end || *cursor != '"') {
     json__error("json: expected string");
     return NULL;
@@ -213,10 +203,8 @@ static inline const char *json__skip_string(const char *cursor,
   return NULL;
 }
 
-static inline const char *json__skip_compound(const char *cursor,
-                                              const char *end,
-                                              char open_ch,
-                                              char close_ch) {
+static const char *json__skip_compound(const char *cursor, const char *end,
+                                       char open_ch, char close_ch) {
   int depth = 1;
   bool in_string = false;
   bool escaped = false;
@@ -254,8 +242,7 @@ static inline const char *json__skip_compound(const char *cursor,
   return NULL;
 }
 
-static inline const char *json__skip_primitive(const char *cursor,
-                                               const char *end) {
+static const char *json__skip_primitive(const char *cursor, const char *end) {
   while (cursor < end) {
     char ch = *cursor;
     if (ch == ',' || ch == ']' || ch == '}' || ch == ' ' || ch == '\t' ||
@@ -267,7 +254,7 @@ static inline const char *json__skip_primitive(const char *cursor,
   return cursor;
 }
 
-static inline const char *json__skip_value(const char *cursor, const char *end) {
+static const char *json__skip_value(const char *cursor, const char *end) {
   cursor = json__skip_whitespace(cursor, end);
   if (cursor >= end) {
     json__error("json: expected value");
@@ -283,7 +270,7 @@ static inline const char *json__skip_value(const char *cursor, const char *end) 
   return json__skip_primitive(cursor, end);
 }
 
-static inline JsonSlice json__value_slice(const char *start, const char *end) {
+static JsonSlice json__value_slice(const char *start, const char *end) {
   if (!start || !end || end < start)
     return json_from_parts(NULL, 0);
 
@@ -293,8 +280,8 @@ static inline JsonSlice json__value_slice(const char *start, const char *end) {
   return json_from_parts(start, (size_t)(end - start));
 }
 
-static inline bool json__object_next(const char **cursor_ptr, const char *end,
-                                     JsonSlice *key, JsonSlice *value) {
+static bool json__object_next(const char **cursor_ptr, const char *end,
+                              JsonSlice *key, JsonSlice *value) {
   const char *cursor = *cursor_ptr;
   const char *key_start;
   const char *key_end;
@@ -358,8 +345,43 @@ static inline bool json__object_next(const char **cursor_ptr, const char *end,
   return true;
 }
 
-static inline bool json_getn(JsonSlice object, const char *key, size_t key_len,
-                             JsonSlice *out) {
+JsonSlice json_from_parts(const char *data, size_t len) {
+  JsonSlice slice;
+  slice.data = data;
+  slice.len = len;
+  return slice;
+}
+
+JsonSlice json_from_cstr(const char *json) {
+  if (!json)
+    return json_from_parts(NULL, 0);
+  return json_from_parts(json, strlen(json));
+}
+
+bool json_slice_copy(JsonSlice slice, char *buffer, size_t buffer_size) {
+  if (!buffer) {
+    json__error("json_slice_copy: buffer is NULL");
+    return false;
+  }
+
+  if (!slice.data && slice.len != 0) {
+    json__error("json_slice_copy: invalid slice");
+    return false;
+  }
+
+  if (buffer_size <= slice.len) {
+    json__error("json_slice_copy: buffer too small");
+    return false;
+  }
+
+  if (slice.len > 0)
+    memcpy(buffer, slice.data, slice.len);
+  buffer[slice.len] = '\0';
+  return true;
+}
+
+bool json_getn(JsonSlice object, const char *key, size_t key_len,
+               JsonSlice *out) {
   const char *cursor;
   const char *end;
   JsonSlice current_key;
@@ -400,7 +422,7 @@ static inline bool json_getn(JsonSlice object, const char *key, size_t key_len,
   return false;
 }
 
-static inline bool json_get(JsonSlice object, const char *key, JsonSlice *out) {
+bool json_get(JsonSlice object, const char *key, JsonSlice *out) {
   if (!key) {
     json__error("json_get: invalid arguments");
     return false;
@@ -408,7 +430,7 @@ static inline bool json_get(JsonSlice object, const char *key, JsonSlice *out) {
   return json_getn(object, key, strlen(key), out);
 }
 
-static inline void json_object_iter_init(JsonSlice object, JsonObjectIter *iter) {
+void json_object_iter_init(JsonSlice object, JsonObjectIter *iter) {
   if (!iter) {
     json__error("json_object_iter_init: iter is NULL");
     return;
@@ -418,8 +440,8 @@ static inline void json_object_iter_init(JsonSlice object, JsonObjectIter *iter)
   iter->cursor = object.data;
 }
 
-static inline bool json_object_iter_next(JsonObjectIter *iter, JsonSlice *key,
-                                         JsonSlice *value) {
+bool json_object_iter_next(JsonObjectIter *iter, JsonSlice *key,
+                           JsonSlice *value) {
   const char *cursor;
   const char *end;
 
@@ -456,7 +478,7 @@ static inline bool json_object_iter_next(JsonObjectIter *iter, JsonSlice *key,
   return true;
 }
 
-static inline void json_array_iter_init(JsonSlice array, JsonArrayIter *iter) {
+void json_array_iter_init(JsonSlice array, JsonArrayIter *iter) {
   if (!iter) {
     json__error("json_array_iter_init: iter is NULL");
     return;
@@ -466,7 +488,7 @@ static inline void json_array_iter_init(JsonSlice array, JsonArrayIter *iter) {
   iter->cursor = array.data;
 }
 
-static inline bool json_array_iter_next(JsonArrayIter *iter, JsonSlice *out) {
+bool json_array_iter_next(JsonArrayIter *iter, JsonSlice *out) {
   const char *cursor;
   const char *end;
   const char *value_start;
@@ -528,4 +550,4 @@ static inline bool json_array_iter_next(JsonArrayIter *iter, JsonSlice *out) {
 }
 #endif
 
-#endif /* LIBJSON_H */
+#endif /* LIBJSON_IMPLEMENTATION */
