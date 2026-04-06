@@ -135,6 +135,123 @@ void json_array_iter_init(JsonSlice array, JsonArrayIter *iter);
  */
 bool json_array_iter_next(JsonArrayIter *iter, JsonSlice *out);
 
+/* ========================================================================= */
+/*                          JSON WRITER (Serialization)                       */
+/* ========================================================================= */
+
+/*
+ * JsonWriter — zero-allocation JSON serializer.
+ *
+ * Writes JSON into a caller-provided buffer. If the buffer runs out of space
+ * the overflow flag is set and all subsequent writes become silent no-ops.
+ * Check `json_writer_ok()` once after building the document.
+ *
+ * Comma insertion between values is fully automatic. A bitmask tracks the
+ * "needs comma" state at each nesting depth, supporting up to 32 levels with
+ * zero extra RAM.
+ */
+typedef struct {
+  char *buf;
+  size_t cap;
+  size_t pos;
+  bool overflow;
+  unsigned int depth;
+  unsigned int needs_comma;
+} JsonWriter;
+
+/*
+ * Initialize a writer that targets `buf` with `cap` bytes of space.
+ *
+ * The buffer is NOT owned by the writer; the caller manages its lifetime.
+ * One byte is always reserved for a trailing NUL, so the maximum JSON payload
+ * length is `cap - 1`.
+ */
+void json_writer_init(JsonWriter *w, char *buf, size_t cap);
+
+/*
+ * Return the number of JSON bytes written so far (excluding NUL terminator).
+ */
+size_t json_writer_len(const JsonWriter *w);
+
+/*
+ * Return true if the writer has not overflowed.
+ */
+bool json_writer_ok(const JsonWriter *w);
+
+/*
+ * Return the NUL-terminated output buffer. Only valid when `json_writer_ok()`
+ * is true.
+ */
+const char *json_writer_output(const JsonWriter *w);
+
+/*
+ * Write a JSON null literal.
+ */
+void json_write_null(JsonWriter *w);
+
+/*
+ * Write a JSON boolean literal.
+ */
+void json_write_bool(JsonWriter *w, bool value);
+
+/*
+ * Write a signed integer as a JSON number.
+ */
+void json_write_int(JsonWriter *w, long value);
+
+/*
+ * Write an unsigned integer as a JSON number.
+ */
+void json_write_uint(JsonWriter *w, unsigned long value);
+
+/*
+ * Write a NUL-terminated C string as a JSON string with proper escaping.
+ *
+ * Characters that require escaping per RFC 8259 (", \, control characters)
+ * are escaped automatically.
+ */
+void json_write_str(JsonWriter *w, const char *str);
+
+/*
+ * Write a string with explicit length as a JSON string with proper escaping.
+ */
+void json_write_strn(JsonWriter *w, const char *str, size_t len);
+
+/*
+ * Write pre-formatted raw JSON bytes without any escaping or quoting.
+ *
+ * Useful for embedding pre-built JSON fragments or custom number formatting
+ * (e.g. fixed-point representations).
+ */
+void json_write_raw(JsonWriter *w, const char *raw, size_t len);
+
+/*
+ * Begin a JSON object. Must be paired with `json_write_object_end()`.
+ */
+void json_write_object_begin(JsonWriter *w);
+
+/*
+ * End the current JSON object.
+ */
+void json_write_object_end(JsonWriter *w);
+
+/*
+ * Write an object key. The next write call produces the associated value.
+ *
+ * Writes `"key":` with automatic comma insertion before the key when needed.
+ */
+void json_write_key(JsonWriter *w, const char *key);
+
+/*
+ * Begin a JSON array. Must be paired with `json_write_array_end()`.
+ */
+void json_write_array_begin(JsonWriter *w);
+
+/*
+ * End the current JSON array.
+ */
+void json_write_array_end(JsonWriter *w);
+
 #ifdef __cplusplus
 }
 #endif
@@ -544,6 +661,234 @@ bool json_array_iter_next(JsonArrayIter *iter, JsonSlice *out) {
     cursor++;
   iter->cursor = cursor;
   return true;
+}
+
+/* ========================================================================= */
+/*                       WRITER IMPLEMENTATION                               */
+/* ========================================================================= */
+
+static void json__write_bytes(JsonWriter *w, const char *data, size_t len) {
+  if (w->overflow || len == 0)
+    return;
+  if (w->pos + len >= w->cap) {
+    w->overflow = true;
+    return;
+  }
+  memcpy(w->buf + w->pos, data, len);
+  w->pos += len;
+  w->buf[w->pos] = '\0';
+}
+
+static void json__write_char(JsonWriter *w, char ch) {
+  if (w->overflow)
+    return;
+  if (w->pos + 1 >= w->cap) {
+    w->overflow = true;
+    return;
+  }
+  w->buf[w->pos++] = ch;
+  w->buf[w->pos] = '\0';
+}
+
+static void json__write_comma_if_needed(JsonWriter *w) {
+  if (w->needs_comma & (1u << w->depth)) {
+    json__write_char(w, ',');
+  }
+  w->needs_comma |= (1u << w->depth);
+}
+
+static void json__write_escaped_string(JsonWriter *w, const char *str,
+                                       size_t len) {
+  static const char hex_digits[] = "0123456789abcdef";
+  size_t i;
+
+  json__write_char(w, '"');
+  for (i = 0; i < len && !w->overflow; i++) {
+    unsigned char ch = (unsigned char)str[i];
+    switch (ch) {
+    case '"':
+      json__write_bytes(w, "\\\"", 2);
+      break;
+    case '\\':
+      json__write_bytes(w, "\\\\", 2);
+      break;
+    case '\b':
+      json__write_bytes(w, "\\b", 2);
+      break;
+    case '\f':
+      json__write_bytes(w, "\\f", 2);
+      break;
+    case '\n':
+      json__write_bytes(w, "\\n", 2);
+      break;
+    case '\r':
+      json__write_bytes(w, "\\r", 2);
+      break;
+    case '\t':
+      json__write_bytes(w, "\\t", 2);
+      break;
+    default:
+      if (ch < 0x20) {
+        char esc[6] = {'\\', 'u', '0', '0', 0, 0};
+        esc[4] = hex_digits[ch >> 4];
+        esc[5] = hex_digits[ch & 0x0f];
+        json__write_bytes(w, esc, 6);
+      } else {
+        json__write_char(w, (char)ch);
+      }
+      break;
+    }
+  }
+  json__write_char(w, '"');
+}
+
+static void json__write_long(JsonWriter *w, unsigned long val, bool negative) {
+  char tmp[21];
+  int pos = (int)sizeof(tmp);
+
+  if (val == 0) {
+    json__write_char(w, '0');
+    return;
+  }
+
+  while (val > 0) {
+    tmp[--pos] = (char)('0' + (val % 10));
+    val /= 10;
+  }
+
+  if (negative)
+    tmp[--pos] = '-';
+
+  json__write_bytes(w, tmp + pos, (size_t)(sizeof(tmp) - (size_t)pos));
+}
+
+void json_writer_init(JsonWriter *w, char *buf, size_t cap) {
+  if (!w)
+    return;
+  w->buf = buf;
+  w->cap = cap;
+  w->pos = 0;
+  w->overflow = (buf == NULL || cap == 0);
+  w->depth = 0;
+  w->needs_comma = 0;
+  if (buf && cap > 0)
+    buf[0] = '\0';
+}
+
+size_t json_writer_len(const JsonWriter *w) { return w ? w->pos : 0; }
+
+bool json_writer_ok(const JsonWriter *w) { return w && !w->overflow; }
+
+const char *json_writer_output(const JsonWriter *w) {
+  if (!w || w->overflow)
+    return NULL;
+  return w->buf;
+}
+
+void json_write_null(JsonWriter *w) {
+  if (!w)
+    return;
+  json__write_comma_if_needed(w);
+  json__write_bytes(w, "null", 4);
+}
+
+void json_write_bool(JsonWriter *w, bool value) {
+  if (!w)
+    return;
+  json__write_comma_if_needed(w);
+  if (value)
+    json__write_bytes(w, "true", 4);
+  else
+    json__write_bytes(w, "false", 5);
+}
+
+void json_write_int(JsonWriter *w, long value) {
+  if (!w)
+    return;
+  json__write_comma_if_needed(w);
+  if (value < 0)
+    json__write_long(w, (unsigned long)(-(value + 1)) + 1, true);
+  else
+    json__write_long(w, (unsigned long)value, false);
+}
+
+void json_write_uint(JsonWriter *w, unsigned long value) {
+  if (!w)
+    return;
+  json__write_comma_if_needed(w);
+  json__write_long(w, value, false);
+}
+
+void json_write_str(JsonWriter *w, const char *str) {
+  if (!w)
+    return;
+  json__write_comma_if_needed(w);
+  if (!str) {
+    json__write_bytes(w, "null", 4);
+    return;
+  }
+  json__write_escaped_string(w, str, strlen(str));
+}
+
+void json_write_strn(JsonWriter *w, const char *str, size_t len) {
+  if (!w)
+    return;
+  json__write_comma_if_needed(w);
+  if (!str) {
+    json__write_bytes(w, "null", 4);
+    return;
+  }
+  json__write_escaped_string(w, str, len);
+}
+
+void json_write_raw(JsonWriter *w, const char *raw, size_t len) {
+  if (!w)
+    return;
+  json__write_comma_if_needed(w);
+  json__write_bytes(w, raw, len);
+}
+
+void json_write_object_begin(JsonWriter *w) {
+  if (!w)
+    return;
+  json__write_comma_if_needed(w);
+  json__write_char(w, '{');
+  w->depth++;
+  w->needs_comma &= ~(1u << w->depth);
+}
+
+void json_write_object_end(JsonWriter *w) {
+  if (!w || w->depth == 0)
+    return;
+  w->needs_comma &= ~(1u << w->depth);
+  w->depth--;
+  json__write_char(w, '}');
+}
+
+void json_write_key(JsonWriter *w, const char *key) {
+  if (!w || !key)
+    return;
+  json__write_comma_if_needed(w);
+  json__write_escaped_string(w, key, strlen(key));
+  json__write_char(w, ':');
+  w->needs_comma &= ~(1u << w->depth);
+}
+
+void json_write_array_begin(JsonWriter *w) {
+  if (!w)
+    return;
+  json__write_comma_if_needed(w);
+  json__write_char(w, '[');
+  w->depth++;
+  w->needs_comma &= ~(1u << w->depth);
+}
+
+void json_write_array_end(JsonWriter *w) {
+  if (!w || w->depth == 0)
+    return;
+  w->needs_comma &= ~(1u << w->depth);
+  w->depth--;
+  json__write_char(w, ']');
 }
 
 #ifdef __cplusplus
