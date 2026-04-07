@@ -213,9 +213,27 @@ void json_write_uint(JsonWriter *w, unsigned long value);
 void json_write_str(JsonWriter *w, const char *str);
 
 /*
+ * Write a `"key":"value"` pair inside an object in a single call.
+ *
+ * Equivalent to `json_write_key(w, key); json_write_str(w, value);`. Both the
+ * key and the value are escaped per RFC 8259. If `value` is NULL the entry is
+ * written as `"key":null`.
+ */
+void json_write_str_kv(JsonWriter *w, const char *key, const char *value);
+
+/*
  * Write a string with explicit length as a JSON string with proper escaping.
  */
 void json_write_strn(JsonWriter *w, const char *str, size_t len);
+
+/*
+ * Write a `"key":"value"` pair where the value has an explicit length.
+ *
+ * Equivalent to `json_write_key(w, key); json_write_strn(w, value, len);`. If
+ * `value` is NULL the entry is written as `"key":null`.
+ */
+void json_write_strn_kv(JsonWriter *w, const char *key, const char *value,
+                        size_t len);
 
 /*
  * Write pre-formatted raw JSON bytes without any escaping or quoting.
@@ -224,6 +242,44 @@ void json_write_strn(JsonWriter *w, const char *str, size_t len);
  * (e.g. fixed-point representations).
  */
 void json_write_raw(JsonWriter *w, const char *raw, size_t len);
+
+/*
+ * Write a `"key":<raw>` pair where the value is pre-formatted raw JSON bytes.
+ */
+void json_write_raw_kv(JsonWriter *w, const char *key, const char *raw,
+                       size_t len);
+
+/*
+ * Write a `"key":null` pair inside an object in a single call.
+ */
+void json_write_null_kv(JsonWriter *w, const char *key);
+
+/*
+ * Write a `"key":<true|false>` pair inside an object in a single call.
+ */
+void json_write_bool_kv(JsonWriter *w, const char *key, bool value);
+
+/*
+ * Write a `"key":<signed integer>` pair inside an object in a single call.
+ */
+void json_write_int_kv(JsonWriter *w, const char *key, long value);
+
+/*
+ * Write a `"key":<unsigned integer>` pair inside an object in a single call.
+ */
+void json_write_uint_kv(JsonWriter *w, const char *key, unsigned long value);
+
+/*
+ * Begin a `"key":{` object entry inside an object. Pair with
+ * `json_write_object_end()`.
+ */
+void json_write_object_begin_k(JsonWriter *w, const char *key);
+
+/*
+ * Begin a `"key":[` array entry inside an object. Pair with
+ * `json_write_array_end()`.
+ */
+void json_write_array_begin_k(JsonWriter *w, const char *key);
 
 /*
  * Begin a JSON object. Must be paired with `json_write_object_end()`.
@@ -830,6 +886,41 @@ void json_write_str(JsonWriter *w, const char *str) {
   json__write_escaped_string(w, str, strlen(str));
 }
 
+void json_write_str_kv(JsonWriter *w, const char *key, const char *value) {
+  if (!w || !key)
+    return;
+  json_write_key(w, key);
+  json_write_str(w, value);
+}
+
+void json_write_null_kv(JsonWriter *w, const char *key) {
+  if (!w || !key)
+    return;
+  json_write_key(w, key);
+  json_write_null(w);
+}
+
+void json_write_bool_kv(JsonWriter *w, const char *key, bool value) {
+  if (!w || !key)
+    return;
+  json_write_key(w, key);
+  json_write_bool(w, value);
+}
+
+void json_write_int_kv(JsonWriter *w, const char *key, long value) {
+  if (!w || !key)
+    return;
+  json_write_key(w, key);
+  json_write_int(w, value);
+}
+
+void json_write_uint_kv(JsonWriter *w, const char *key, unsigned long value) {
+  if (!w || !key)
+    return;
+  json_write_key(w, key);
+  json_write_uint(w, value);
+}
+
 void json_write_strn(JsonWriter *w, const char *str, size_t len) {
   if (!w)
     return;
@@ -841,11 +932,27 @@ void json_write_strn(JsonWriter *w, const char *str, size_t len) {
   json__write_escaped_string(w, str, len);
 }
 
+void json_write_strn_kv(JsonWriter *w, const char *key, const char *value,
+                        size_t len) {
+  if (!w || !key)
+    return;
+  json_write_key(w, key);
+  json_write_strn(w, value, len);
+}
+
 void json_write_raw(JsonWriter *w, const char *raw, size_t len) {
   if (!w)
     return;
   json__write_comma_if_needed(w);
   json__write_bytes(w, raw, len);
+}
+
+void json_write_raw_kv(JsonWriter *w, const char *key, const char *raw,
+                       size_t len) {
+  if (!w || !key)
+    return;
+  json_write_key(w, key);
+  json_write_raw(w, raw, len);
 }
 
 void json_write_object_begin(JsonWriter *w) {
@@ -855,6 +962,13 @@ void json_write_object_begin(JsonWriter *w) {
   json__write_char(w, '{');
   w->depth++;
   w->needs_comma &= ~(1u << w->depth);
+}
+
+void json_write_object_begin_k(JsonWriter *w, const char *key) {
+  if (!w || !key)
+    return;
+  json_write_key(w, key);
+  json_write_object_begin(w);
 }
 
 void json_write_object_end(JsonWriter *w) {
@@ -881,6 +995,13 @@ void json_write_array_begin(JsonWriter *w) {
   json__write_char(w, '[');
   w->depth++;
   w->needs_comma &= ~(1u << w->depth);
+}
+
+void json_write_array_begin_k(JsonWriter *w, const char *key) {
+  if (!w || !key)
+    return;
+  json_write_key(w, key);
+  json_write_array_begin(w);
 }
 
 void json_write_array_end(JsonWriter *w) {

@@ -84,6 +84,19 @@ void json_write_key(JsonWriter *w, const char *key);
 
 void json_write_array_begin(JsonWriter *w);
 void json_write_array_end(JsonWriter *w);
+
+/* Key+value convenience helpers (write "key":value in one call). */
+void json_write_null_kv (JsonWriter *w, const char *key);
+void json_write_bool_kv (JsonWriter *w, const char *key, bool value);
+void json_write_int_kv  (JsonWriter *w, const char *key, long value);
+void json_write_uint_kv (JsonWriter *w, const char *key, unsigned long value);
+void json_write_str_kv  (JsonWriter *w, const char *key, const char *value);
+void json_write_strn_kv (JsonWriter *w, const char *key, const char *value, size_t len);
+void json_write_raw_kv  (JsonWriter *w, const char *key, const char *raw, size_t len);
+
+/* Key-only helpers that open a nested object/array under a key. */
+void json_write_object_begin_k(JsonWriter *w, const char *key);
+void json_write_array_begin_k (JsonWriter *w, const char *key);
 ```
 
 ## Examples
@@ -132,21 +145,16 @@ int main(void) {
   json_writer_init(&w, buf, sizeof(buf));
 
   json_write_object_begin(&w);
-    json_write_key(&w, "name");
-    json_write_str(&w, "sensor-01");
+    json_write_str_kv(&w, "name", "sensor-01");
+    json_write_int_kv(&w, "temp", 2350);
 
-    json_write_key(&w, "temp");
-    json_write_int(&w, 2350);
-
-    json_write_key(&w, "readings");
-    json_write_array_begin(&w);
+    json_write_array_begin_k(&w, "readings");
       json_write_int(&w, 100);
       json_write_int(&w, 200);
       json_write_int(&w, 300);
     json_write_array_end(&w);
 
-    json_write_key(&w, "active");
-    json_write_bool(&w, true);
+    json_write_bool_kv(&w, "active", true);
   json_write_object_end(&w);
 
   if (json_writer_ok(&w)) {

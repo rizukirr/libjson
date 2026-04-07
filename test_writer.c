@@ -163,6 +163,39 @@ static void test_null_str(void) {
   printf("PASS: NULL string -> null\n");
 }
 
+static void test_kv_helpers(void) {
+  char buf[256];
+  JsonWriter w;
+  const char *expected =
+      "{\"n\":null,\"b\":true,\"i\":-42,\"u\":7,\"s\":\"hi\","
+      "\"sn\":\"abc\",\"r\":1.5,\"obj\":{\"x\":1},\"arr\":[1,2]}";
+
+  json_writer_init(&w, buf, sizeof(buf));
+
+  json_write_object_begin(&w);
+  json_write_null_kv(&w, "n");
+  json_write_bool_kv(&w, "b", true);
+  json_write_int_kv(&w, "i", -42);
+  json_write_uint_kv(&w, "u", 7);
+  json_write_str_kv(&w, "s", "hi");
+  json_write_strn_kv(&w, "sn", "abcXX", 3);
+  json_write_raw_kv(&w, "r", "1.5", 3);
+
+  json_write_object_begin_k(&w, "obj");
+  json_write_int_kv(&w, "x", 1);
+  json_write_object_end(&w);
+
+  json_write_array_begin_k(&w, "arr");
+  json_write_int(&w, 1);
+  json_write_int(&w, 2);
+  json_write_array_end(&w);
+  json_write_object_end(&w);
+
+  assert(json_writer_ok(&w));
+  assert(strcmp(buf, expected) == 0);
+  printf("PASS: kv helpers\n");
+}
+
 int main(void) {
   test_simple_object();
   test_nested_array();
@@ -175,6 +208,7 @@ int main(void) {
   test_control_char_escape();
   test_uint();
   test_null_str();
+  test_kv_helpers();
   printf("\nAll writer tests passed.\n");
   return 0;
 }

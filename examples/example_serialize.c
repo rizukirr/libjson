@@ -20,20 +20,12 @@ static bool user_to_json(const User *user, char *buf, size_t cap) {
   json_writer_init(&w, buf, cap);
 
   json_write_object_begin(&w);
-  json_write_key(&w, "name");
-  json_write_str(&w, user->name);
+  json_write_str_kv(&w, "name", user->name);
+  json_write_int_kv(&w, "id", user->id);
+  json_write_str_kv(&w, "email", user->email);
+  json_write_bool_kv(&w, "active", user->active);
 
-  json_write_key(&w, "id");
-  json_write_int(&w, user->id);
-
-  json_write_key(&w, "email");
-  json_write_str(&w, user->email);
-
-  json_write_key(&w, "active");
-  json_write_bool(&w, user->active);
-
-  json_write_key(&w, "roles");
-  json_write_array_begin(&w);
+  json_write_array_begin_k(&w, "roles");
   for (i = 0; i < user->roles_count; i++)
     json_write_str(&w, user->roles[i]);
   json_write_array_end(&w);
@@ -53,21 +45,12 @@ static bool users_to_json(const User *users, size_t count, char *buf,
   json_write_array_begin(&w);
   for (i = 0; i < count; i++) {
     json_write_object_begin(&w);
+    json_write_str_kv(&w, "name", users[i].name);
+    json_write_int_kv(&w, "id", users[i].id);
+    json_write_str_kv(&w, "email", users[i].email);
+    json_write_bool_kv(&w, "active", users[i].active);
 
-    json_write_key(&w, "name");
-    json_write_str(&w, users[i].name);
-
-    json_write_key(&w, "id");
-    json_write_int(&w, users[i].id);
-
-    json_write_key(&w, "email");
-    json_write_str(&w, users[i].email);
-
-    json_write_key(&w, "active");
-    json_write_bool(&w, users[i].active);
-
-    json_write_key(&w, "roles");
-    json_write_array_begin(&w);
+    json_write_array_begin_k(&w, "roles");
     for (j = 0; j < users[i].roles_count; j++)
       json_write_str(&w, users[i].roles[j]);
     json_write_array_end(&w);
